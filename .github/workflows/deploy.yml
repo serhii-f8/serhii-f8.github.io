@@ -1,0 +1,63 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the permissions the Pages deployment needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push supersedes a run still in progress.
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Check the page for broken references
+        run: |
+          set -euo pipefail
+          status=0
+          # Every local href/src in the HTML must point at a file that exists.
+          for f in index.html 404.html; do
+            grep -oE '(href|src)="[^"#]+"' "$f" \
+              | sed -E 's/^[a-z]+="//; s/"$//' \
+              | grep -vE '^(https?:|mailto:)' \
+              | while read -r ref; do
+                  path="${ref#/}"
+                  [ -n "$path" ] || path=index.html
+                  [ -e "$path" ] || { echo "$f references missing file: $ref"; exit 1; }
+                done || status=1
+          done
+          # Fonts referenced from the stylesheet must exist next to it.
+          grep -oE 'url\("[^"]+"\)' assets/site.css \
+            | sed -E 's/^url\("//; s/"\)$//' \
+            | while read -r ref; do
+                [ -e "assets/$ref" ] || { echo "site.css references missing file: $ref"; exit 1; }
+              done || status=1
+          exit "$status"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

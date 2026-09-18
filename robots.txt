@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://serhii-f8.github.io/sitemap.xml
